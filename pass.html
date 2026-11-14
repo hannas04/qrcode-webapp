@@ -29,29 +29,44 @@ button{width:100%;padding:13px;border:0;border-radius:8px;background:var(--pri);
 <script>
 const SUPABASE_URL = 'https://fwqsidukxvfitsdnfopg.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3cXNpZHVreHZmaXRzZG5mb3BnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ2NDM5MzUsImV4cCI6MjExMDIxOTkzNX0.sjhynhUJMIJaEC9jxb44VjEziOO9clXtcy0rEVB-J54';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const box = document.getElementById('box');
+function showError(title,message){
+  box.replaceChildren();
+  const heading=document.createElement('h1');
+  heading.textContent=title;
+  const detail=document.createElement('p');
+  detail.className='hint';
+  detail.textContent=message;
+  box.append(heading,detail);
+}
+const sb=window.supabase?.createClient(SUPABASE_URL,SUPABASE_KEY);
 const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const code = new URLSearchParams(location.search).get('c');
+const code = new URLSearchParams(location.search).get('c')?.trim();
 
 async function init(){
-  const box=document.getElementById('box');
-  if(!code){box.innerHTML='<h1>Invalid link</h1><p class="hint">Please use the pass link you were sent.</p>';return}
+  if(!code){showError('Invalid link','This pass link is missing its code. Please ask the organiser to resend it.');return}
+  if(!sb){showError('Connection unavailable','The Supabase client did not load. Check your internet connection and reload this page.');return}
+  if(typeof QRCode==='undefined'){showError('QR code unavailable','The QR code library did not load. Check your internet connection and reload this page.');return}
   const {data,error}=await sb.rpc('get_pass',{p_code:code});
-  if(error||!data){box.innerHTML='<h1>Pass not found</h1><p class="hint">Please check your link or contact the organiser.</p>';return}
-  const d=data.date?new Date(data.date).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}):'';
+  if(error){showError('Could not load pass',error.message||'The pass service returned an error. Please contact the organiser.');return}
+  const pass=Array.isArray(data)?data[0]:data;
+  if(!pass){showError('Pass not found','Please check the link or contact the organiser.');return}
+  if(!pass.code){showError('Pass data unavailable','The pass service did not return a pass code. Please contact the organiser.');return}
+  const d=pass.date?new Date(pass.date).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}):'';
   box.innerHTML=`
     <p class="lbl">Entry pass</p>
-    <h1>${esc(data.event)}</h1>
+    <h1>${esc(pass.event)}</h1>
     <p class="date">${esc(d)}</p>
     <div id="qr"></div>
-    ${data.guest_name?`<p class="name">${esc(data.guest_name)}</p>`:''}
-    <p class="code">${esc(data.code)}</p>
-    ${data.status==='used'?'<p class="warn">This pass has already been used.</p>':''}
+    ${pass.guest_name?`<p class="name">${esc(pass.guest_name)}</p>`:''}
+    <p class="code">${esc(pass.code)}</p>
+    ${pass.status==='used'?'<p class="warn">This pass has already been used.</p>':''}
     <button id="save">Save QR image</button>
     <p class="hint">Show this QR code at the entrance.</p>`;
-  new QRCode(document.getElementById('qr'),{text:data.code,width:240,height:240,correctLevel:QRCode.CorrectLevel.M});
+  new QRCode(document.getElementById('qr'),{text:pass.code,width:240,height:240,correctLevel:QRCode.CorrectLevel.M});
   document.getElementById('save').onclick=()=>{
     const cv=document.querySelector('#qr canvas');
+    if(!cv){showError('QR code unavailable','The pass loaded, but its QR image could not be generated. Reload the page or contact the organiser.');return}
     const big=document.createElement('canvas');big.width=big.height=600;
     const g=big.getContext('2d');g.imageSmoothingEnabled=false;g.fillStyle='#fff';g.fillRect(0,0,600,600);
     g.drawImage(cv,30,30,540,540);
