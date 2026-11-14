@@ -309,6 +309,7 @@ const SUPABASE_URL = 'https://fwqsidukxvfitsdnfopg.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3cXNpZHVreHZmaXRzZG5mb3BnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ2NDM5MzUsImV4cCI6MjExMDIxOTkzNX0.sjhynhUJMIJaEC9jxb44VjEziOO9clXtcy0rEVB-J54';
 // ============================================
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const PUBLIC_BASE_URL = 'https://hannas04.github.io/public-pass-qr/'; // the folder where rsvp.html and pass.html are hosted. Keep the / at the end
 const $ = id => document.getElementById(id);
 let events = [], ev = null;
 let waBatch = [], waBatchIndex = 0, waBatchOpened = false, waBatchEventId = null;
@@ -368,11 +369,12 @@ function selectEv(){
   updateWaBatch();
   $('evBox').classList.toggle('hide',!ev);
   if(ev){refresh();loadRsvps();}
-  if(ev) $('rsvpLink').value = location.origin + location.pathname.replace(/[^/]*$/,'') + 'rsvp.html?e=' + ev.id;
+  if(ev) $('rsvpLink').value = PUBLIC_BASE_URL + 'rsvp.html?e=' + ev.id;
 }
 
 // ---- passes ----
-function passLink(code){return location.origin+location.pathname.replace(/[^/]*$/,'')+'pass.html?c='+code}
+// function passLink(code){return location.origin+location.pathname.replace(/[^/]*$/,'')+'pass.html?c='+code}
+function passLink(code){return PUBLIC_BASE_URL+'pass.html?c='+code}
 function sendLink(phone,name,code){
   return 'https://wa.me/'+phone+'?text='+encodeURIComponent('Hello '+(name||'')+', here is your entry pass for '+ev.name+': '+passLink(code)+'  Please open it and show the QR code at the entrance.');
 }
