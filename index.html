@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR Pass Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--tx:#1b1e28;--mut:#6b7185;--pri:#5b4bdb;--bd:#e2e5ee;--ok:#1f9d55;--bad:#d64545}
+@media (prefers-color-scheme:dark){:root{--bg:#14161d;--card:#1d2029;--tx:#eceef5;--mut:#9aa1b8;--bd:#2c3040}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:0 0 10px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit;margin-bottom:8px}
+button{padding:10px 14px;border:0;border-radius:8px;background:var(--pri);color:#fff;font:inherit;cursor:pointer}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
+.row.fit>*{flex:0 0 auto}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.stat{background:var(--bg);border-radius:10px;padding:10px;text-align:center}
+.stat b{display:block;font-size:22px}.stat span{font-size:12px;color:var(--mut)}
+.tbl{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+.tag{padding:2px 8px;border-radius:99px;font-size:12px;background:var(--bg)}
+.tag.used{color:var(--ok)}
+#msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:8px;display:none;z-index:9}
+#login{max-width:360px;margin:12vh auto}
+.hide{display:none}
+#sheet{display:none}
+.qcell{width:80px;height:80px;background:#fff;padding:4px;border-radius:6px;cursor:pointer}
+.qcell img{display:none}
+@media print{
+  @page{size:A4;margin:10mm}
+  .wrap,#msg{display:none!important}
+  body{background:#fff}
+  #sheet{display:block!important;padding:0}
+  .qc{height:277mm;display:flex;flex-direction:column;justify-content:center;align-items:center;break-after:page;color:#000;font:14px monospace}
+  .qc:last-child{break-after:auto}
+  .qc div.q{display:flex;justify-content:center;margin-bottom:4px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div id="login" class="card">
+  <h1>Admin login</h1>
+  <input id="em" type="email" placeholder="Email" autocomplete="username">
+  <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+  <button id="loginBtn" style="width:100%">Login</button>
+</div>
+
+<div id="app" class="hide">
+  <div class="row fit" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h1 style="margin:0">QR Pass Admin</h1>
+    <button class="sec" id="logoutBtn">Logout</button>
+  </div>
+
+  <div class="card">
+    <h2>1. Clients / Events</h2>
+    <div class="row">
+      <input id="evName" placeholder="Event name (e.g. Tunde's 40th)">
+      <input id="evClient" placeholder="Client name">
+      <input id="evEmail" type="email" placeholder="Client login email (for scanner)">
+      <input id="evDate" type="date">
+    </div>
+    <button id="addEv">Create event</button>
+    <hr style="border:0;border-top:1px solid var(--bd);margin:14px 0">
+    <select id="evSel"></select>
+  </div>
+
+  <div id="evBox" class="hide">
+    <div class="card"><b>RSVP link for this event</b>
+  <input id="rsvpLink" readonly onclick="this.select()" style="margin-top:8px"></div>
+    <div class="card">
+      <h2>5. RSVPs</h2>
+      <div class="stats">
+        <div class="stat"><b id="rYes">0</b><span>Attending</span></div>
+        <div class="stat"><b id="rNo">0</b><span>Declined</span></div>
+        <div class="stat"><b id="rWait">0</b><span>Not replied</span></div>
+      </div>
+      <button class="sec" id="rReload">Refresh RSVPs</button>
+      <div class="tbl" style="margin-top:10px"><table>
+        <thead><tr><th>Name</th><th>Phone</th><th>Reply</th><th></th></tr></thead>
+        <tbody id="rRows"></tbody></table></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="sTotal">0</b><span>Total passes</span></div>
+      <div class="stat"><b id="sUsed">0</b><span>Checked in</span></div>
+      <div class="stat"><b id="sLeft">0</b><span>Not yet used</span></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Generate QR codes</h2>
+      <div class="row">
+        <input id="genN" type="number" min="1" max="5000" placeholder="How many? (e.g. 500)">
+        <button id="genBtn">Generate blank passes</button>
+      </div>
+      <p style="color:var(--mut);font-size:13px;margin:4px 0 0">Blank passes are for printed invitations. Send the sheet to your designer.</p>
+      <div class="row fit" style="margin-top:10px">
+        <button class="sec" id="zipBtn">Download QR codes (ZIP)</button>
+        <button class="sec" id="pdfBtn">Download QR codes (PDF)</button>
+        <button class="sec" id="printBtn">Print QR codes (one per page)</button>
+        <button class="sec" id="csvBtn">Download CSV</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Guest numbers (for RSVP + WhatsApp)</h2>
+      <textarea id="guests" rows="5" placeholder="One per line:&#10;Ade Bello, 08012345678&#10;Chioma, 2348098765432"></textarea>
+      <button id="impBtn">Import guest list</button>
+    </div>
+
+    <div class="card">
+      <h2>4. Passes</h2>
+      <input id="q" placeholder="Search code, name or phone">
+      <div class="tbl"><table>
+        <thead><tr><th>QR (tap to download)</th><th>Name</th><th>Phone</th><th>Status</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+      <p id="more" style="color:var(--mut);font-size:13px"></p>
+      <hr style="border:0;border-top:1px solid var(--bd);margin:14px 0">
+      <h2>Send passes to guests on WhatsApp</h2>
+      <p style="color:var(--mut);font-size:13px">Prepare messages for every pass with a valid phone number. Each message contains a link to the guest's QR pass, not an image attachment. Open each chat, send the message in WhatsApp, then return here for the next guest. Messages are not sent automatically.</p>
+      <div class="row fit">
+        <button class="sec" id="waBatchPrepare">Prepare WhatsApp batch</button>
+        <button id="waBatchOpen" disabled>Open current WhatsApp chat</button>
+        <button class="sec" id="waBatchNext" disabled>Next guest</button>
+      </div>
+      <p id="waBatchStatus" style="color:var(--mut);font-size:13px;margin-bottom:0" aria-live="polite"></p>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="sheet"></div>
+<div id="msg"></div>
+
+<script>
+// ====== PUT YOUR SUPABASE DETAILS HERE ======
+const SUPABASE_URL = 'https://fwqsidukxvfitsdnfopg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3cXNpZHVreHZmaXRzZG5mb3BnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ2NDM5MzUsImV4cCI6MjExMDIxOTkzNX0.sjhynhUJMIJaEC9jxb44VjEziOO9clXtcy0rEVB-J54';
+// ============================================
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+let events = [], ev = null;
+let waBatch = [], waBatchIndex = 0, waBatchOpened = false, waBatchEventId = null;
+
+function toast(t){const m=$('msg');m.textContent=t;m.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>m.style.display='none',3000)}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function newCode(){
+  const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', b=new Uint8Array(10);
+  crypto.getRandomValues(b);
+  return Array.from(b,x=>a[x%a.length]).join('');
+}
+function cleanPhone(p){
+  let d=String(p).replace(/\D/g,'');
+  if(d.startsWith('0')) d='234'+d.slice(1);
+  return d;
+}
+
+// ---- auth ----
+async function boot(){
+  const {data:{session}}=await sb.auth.getSession();
+  show(!!session);
+  if(session) loadEvents();
+}
+function show(on){$('login').classList.toggle('hide',on);$('app').classList.toggle('hide',!on)}
+$('loginBtn').onclick=async()=>{
+  const {error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});
+  if(error) return toast(error.message);
+  show(true);loadEvents();
+};
+$('logoutBtn').onclick=async()=>{await sb.auth.signOut();show(false)};
+
+// ---- events ----
+async function loadEvents(){
+  const {data,error}=await sb.from('events').select('*').order('created_at',{ascending:false});
+  if(error) return toast(error.message);
+  events=data;
+  $('evSel').innerHTML='<option value="">Select an event...</option>'+events.map(e=>`<option value="${e.id}">${esc(e.name)} (${esc(e.client_name||'')})</option>`).join('');
+  if(ev&&events.find(e=>e.id===ev.id)) $('evSel').value=ev.id;
+}
+$('addEv').onclick=async()=>{
+  const name=$('evName').value.trim();
+  if(!name) return toast('Enter event name');
+  const {data,error}=await sb.from('events').insert({
+    name,client_name:$('evClient').value.trim(),
+    client_email:$('evEmail').value.trim().toLowerCase()||null,
+    event_date:$('evDate').value||null
+  }).select().single();
+  if(error) return toast(error.message);
+  toast('Event created');
+  ['evName','evClient','evEmail','evDate'].forEach(i=>$(i).value='');
+  await loadEvents();$('evSel').value=data.id;selectEv();
+};
+$('evSel').onchange=selectEv;
+function selectEv(){
+  ev=events.find(e=>e.id===$('evSel').value)||null;
+  waBatch=[];waBatchIndex=0;waBatchOpened=false;waBatchEventId=null;
+  updateWaBatch();
+  $('evBox').classList.toggle('hide',!ev);
+  if(ev){refresh();loadRsvps();}
+  if(ev) $('rsvpLink').value = location.origin + location.pathname.replace(/[^/]*$/,'') + 'rsvp.html?e=' + ev.id;
+}
+
+// ---- passes ----
+function passLink(code){return location.origin+location.pathname.replace(/[^/]*$/,'')+'pass.html?c='+code}
+function sendLink(phone,name,code){
+  return 'https://wa.me/'+phone+'?text='+encodeURIComponent('Hello '+(name||'')+', here is your entry pass for '+ev.name+': '+passLink(code)+'  Please open it and show the QR code at the entrance.');
+}
+async function loadRsvps(){
+  const {data,error}=await sb.from('rsvps').select('guest_name,phone,attending,passes(code,phone)').eq('event_id',ev.id).order('created_at',{ascending:false}).limit(1000);
+  if(error) return toast(error.message);
+  const {count,error:countError}=await sb.from('passes').select('id',{count:'exact',head:true}).eq('event_id',ev.id).not('phone','is',null);
+  if(countError) return toast(countError.message);
+  const withPhone=count||0;
+  const yes=data.filter(r=>r.attending).length;
+  $('rYes').textContent=yes;$('rNo').textContent=data.length-yes;
+  $('rWait').textContent=Math.max(withPhone-data.length,0);
+  $('rRows').innerHTML=data.map(r=>{
+    const p=r.passes||{},ph=p.phone||r.phone;
+    return `<tr><td>${esc(r.guest_name)}</td><td>${esc(ph)}</td><td>${r.attending?'Attending':'Declined'}</td><td>${r.attending&&p.code?`<a href="${sendLink(ph,r.guest_name,p.code)}" target="_blank" rel="noopener">Send pass</a>`:''}</td></tr>`;
+  }).join('');
+}
+$('rReload').onclick=()=>ev&&loadRsvps();
+
+function updateWaBatch(){
+  const current=waBatch[waBatchIndex];
+  $('waBatchOpen').disabled=!current||waBatchOpened;
+  $('waBatchNext').disabled=!current||!waBatchOpened;
+  if(!current){
+    $('waBatchStatus').textContent=waBatch.length?'Batch complete. WhatsApp does not report whether each message was sent.':'';
+    return;
+  }
+  $('waBatchStatus').textContent=`Guest ${waBatchIndex+1} of ${waBatch.length}: ${current.guest_name||'Guest'} (${current.phone}). Send the message in WhatsApp, then return and select Next guest.`;
+}
+$('waBatchPrepare').onclick=async()=>{
+  if(!ev) return;
+  const eventId=ev.id;
+  $('waBatchPrepare').disabled=true;
+  try{
+    const all=await fetchAll(eventId);
+    if(!ev||ev.id!==eventId) return;
+    waBatch=all.filter(p=>{
+      const phone=cleanPhone(p.phone||'');
+      return p.code&&phone.length>=10&&phone.length<=15;
+    }).map(p=>({...p,phone:cleanPhone(p.phone)}));
+    waBatchIndex=0;waBatchOpened=false;waBatchEventId=eventId;
+    updateWaBatch();
+    if(!waBatch.length) toast('No passes with valid phone numbers were found');
+    else toast(waBatch.length+' WhatsApp messages prepared');
+  }catch(e){toast(e.message)}
+  finally{$('waBatchPrepare').disabled=false}
+};
+$('waBatchOpen').onclick=()=>{
+  if(!ev||waBatchEventId!==ev.id) return;
+  const p=waBatch[waBatchIndex];
+  if(!p) return;
+  const a=document.createElement('a');
+  a.href=sendLink(p.phone,p.guest_name,p.code);
+  a.target='_blank';a.rel='noopener';
+  document.body.appendChild(a);a.click();a.remove();
+  waBatchOpened=true;
+  updateWaBatch();
+};
+$('waBatchNext').onclick=()=>{
+  if(!ev||waBatchEventId!==ev.id||!waBatchOpened) return;
+  waBatchIndex++;waBatchOpened=false;
+  updateWaBatch();
+};
+
+async function refresh(){
+  const cnt=async f=>{let q=sb.from('passes').select('id',{count:'exact',head:true}).eq('event_id',ev.id);if(f)q=f(q);return (await q).count||0};
+  const [t,u]=await Promise.all([cnt(),cnt(q=>q.eq('status','used'))]);
+  $('sTotal').textContent=t;$('sUsed').textContent=u;$('sLeft').textContent=t-u;
+  const s=$('q').value.trim().replace(/[,()]/g,'');
+  let q=sb.from('passes').select('*').eq('event_id',ev.id).order('created_at',{ascending:false}).limit(100);
+  if(s) q=q.or(`code.ilike.%${s}%,guest_name.ilike.%${s}%,phone.ilike.%${s}%`);
+  const {data,error}=await q;
+  if(error) return toast(error.message);
+  $('rows').innerHTML=data.map(p=>{
+    const wa=p.phone?`<a href="${sendLink(p.phone,p.guest_name,p.code)}" target="_blank" rel="noopener">WhatsApp</a>`:'';
+    return `<tr><td><div class="qcell" data-code="${esc(p.code)}" data-name="${esc(p.guest_name||'')}" title="Tap to download"></div></td><td>${esc(p.guest_name)}</td><td>${esc(p.phone)}</td><td><span class="tag ${p.status==='used'?'used':''}">${p.status==='used'?'checked in':'unused'}</span></td><td>${wa}</td></tr>`;
+  }).join('');
+  document.querySelectorAll('.qcell').forEach((el,i)=>{
+    new QRCode(el,{text:el.dataset.code,width:80,height:80,correctLevel:QRCode.CorrectLevel.M});
+    el.onclick=()=>{
+      const cv=el.querySelector('canvas');
+      const big=document.createElement('canvas');big.width=big.height=400;
+      const g=big.getContext('2d');g.imageSmoothingEnabled=false;g.fillStyle='#fff';g.fillRect(0,0,400,400);
+      g.drawImage(cv,20,20,360,360);
+      const a=document.createElement('a');a.href=big.toDataURL('image/png');
+      a.download='qr-'+(el.dataset.name||el.dataset.code).replace(/\W+/g,'-')+'.png';a.click();
+    };
+  });
+  $('more').textContent=t>100?`Showing latest 100 of ${t}. Use search to find others.`:'';
+}
+let st;$('q').oninput=()=>{clearTimeout(st);st=setTimeout(()=>ev&&refresh(),300)};
+
+async function insertRows(rows){
+  for(let i=0;i<rows.length;i+=500){
+    const {error}=await sb.from('passes').insert(rows.slice(i,i+500));
+    if(error) throw error;
+  }
+}
+$('genBtn').onclick=async()=>{
+  const n=parseInt($('genN').value);
+  if(!n||n<1||n>5000) return toast('Enter a number from 1 to 5000');
+  $('genBtn').disabled=true;
+  try{
+    await insertRows(Array.from({length:n},()=>({event_id:ev.id,code:newCode()})));
+    toast(n+' passes created');$('genN').value='';refresh();
+  }catch(e){toast(e.message)}
+  $('genBtn').disabled=false;
+};
+$('impBtn').onclick=async()=>{
+  const rows=$('guests').value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+    const parts=l.split(/[,\t]/).map(x=>x.trim());
+    const phone=cleanPhone(parts.length>1?parts[1]:parts[0]);
+    return {event_id:ev.id,code:newCode(),guest_name:parts.length>1?parts[0]:null,phone};
+  }).filter(r=>r.phone.length>=10);
+  if(!rows.length) return toast('No valid numbers found');
+  try{await insertRows(rows);toast(rows.length+' guests imported');$('guests').value='';refresh()}
+  catch(e){toast(e.message)}
+};
+
+async function fetchAll(eventId=ev.id){
+  let all=[],from=0;
+  while(true){
+    const {data,error}=await sb.from('passes').select('*').eq('event_id',eventId).order('created_at').range(from,from+999);
+    if(error) throw error;
+    all=all.concat(data);
+    if(data.length<1000) break;
+    from+=1000;
+  }
+  return all;
+}
+function qrDataUrl(code){
+  const holder=document.createElement('div');
+  new QRCode(holder,{text:code,width:400,height:400,correctLevel:QRCode.CorrectLevel.M});
+  const canvas=holder.querySelector('canvas');
+  if(!canvas) throw new Error('Could not generate a QR code');
+  return canvas.toDataURL('image/png');
+}
+function downloadBlob(blob,filename){
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function fileName(){
+  return (ev.name||'event').replace(/[^\w-]+/g,'-').replace(/^-|-$/g,'')||'event';
+}
+$('zipBtn').onclick=async()=>{
+  $('zipBtn').disabled=true;
+  try{
+    const all=await fetchAll();
+    if(!all.length) return toast('There are no passes to download');
+    const zip=new JSZip();
+    all.forEach(p=>zip.file(`qr-${p.code}.png`,qrDataUrl(p.code).split(',')[1],{base64:true}));
+    downloadBlob(await zip.generateAsync({type:'blob'}),fileName()+'-qr-codes.zip');
+    toast(all.length+' QR codes downloaded');
+  }catch(e){toast(e.message)}
+  finally{$('zipBtn').disabled=false}
+};
+$('pdfBtn').onclick=async()=>{
+  $('pdfBtn').disabled=true;
+  try{
+    const all=await fetchAll();
+    if(!all.length) return toast('There are no passes to download');
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    all.forEach((p,i)=>{
+      if(i) pdf.addPage();
+      pdf.setFontSize(16);pdf.text(ev.name,105,35,{align:'center',maxWidth:170});
+      pdf.addImage(qrDataUrl(p.code),'PNG',55,75,100,100);
+      pdf.setFontSize(12);pdf.text(p.code,105,190,{align:'center'});
+    });
+    pdf.save(fileName()+'-qr-codes.pdf');
+    toast(all.length+' QR codes downloaded');
+  }catch(e){toast(e.message)}
+  finally{$('pdfBtn').disabled=false}
+};
+$('csvBtn').onclick=async()=>{
+  try{
+    const all=await fetchAll();
+    const csv='code,name,phone,status\n'+all.map(p=>[p.code,p.guest_name||'',p.phone||'',p.status].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download=ev.name.replace(/\W+/g,'-')+'-passes.csv';a.click();
+  }catch(e){toast(e.message)}
+};
+$('printBtn').onclick=async()=>{
+  toast('Preparing sheet...');
+  try{
+    const all=await fetchAll();
+    if(!all.length) return toast('There are no passes to print');
+    const sh=$('sheet');sh.innerHTML='';
+    all.forEach((p,i)=>{
+      const c=document.createElement('div');c.className='qc';
+      c.innerHTML='<div class="q"></div>';
+      sh.appendChild(c);
+      new QRCode(c.firstChild,{text:p.code,width:110,height:110,correctLevel:QRCode.CorrectLevel.M});
+      const label=document.createElement('div');label.textContent=p.code;c.appendChild(label);
+    });
+    setTimeout(()=>window.print(),400);
+  }catch(e){toast(e.message)}
+};
+
+boot();
+</script>
+</body>
+</html>

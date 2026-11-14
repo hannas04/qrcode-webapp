@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Entry Pass</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--tx:#1b1e28;--mut:#6b7185;--pri:#5b4bdb;--bd:#e2e5ee;--warn:#d98a00}
+@media (prefers-color-scheme:dark){:root{--bg:#14161d;--card:#1d2029;--tx:#eceef5;--mut:#9aa1b8;--bd:#2c3040}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:24px;width:100%;max-width:360px;text-align:center}
+.lbl{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 6px}
+h1{font-size:22px;margin:0 0 4px}
+.date{color:var(--mut);font-size:14px;margin:0 0 18px}
+#qr{display:inline-block;background:#fff;padding:14px;border-radius:12px;margin-bottom:12px}
+.name{font-size:18px;font-weight:600;margin:6px 0 2px}
+.code{font-family:monospace;color:var(--mut);font-size:13px;margin:0 0 16px}
+.warn{color:var(--warn);font-size:14px;margin:0 0 12px}
+button{width:100%;padding:13px;border:0;border-radius:8px;background:var(--pri);color:#fff;font:inherit;cursor:pointer}
+.hint{color:var(--mut);font-size:13px;margin:12px 0 0}
+</style>
+</head>
+<body>
+<div class="card" id="box"><p class="hint">Loading your pass...</p></div>
+
+<script>
+const SUPABASE_URL = 'https://fwqsidukxvfitsdnfopg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3cXNpZHVreHZmaXRzZG5mb3BnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ2NDM5MzUsImV4cCI6MjExMDIxOTkzNX0.sjhynhUJMIJaEC9jxb44VjEziOO9clXtcy0rEVB-J54';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const code = new URLSearchParams(location.search).get('c');
+
+async function init(){
+  const box=document.getElementById('box');
+  if(!code){box.innerHTML='<h1>Invalid link</h1><p class="hint">Please use the pass link you were sent.</p>';return}
+  const {data,error}=await sb.rpc('get_pass',{p_code:code});
+  if(error||!data){box.innerHTML='<h1>Pass not found</h1><p class="hint">Please check your link or contact the organiser.</p>';return}
+  const d=data.date?new Date(data.date).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}):'';
+  box.innerHTML=`
+    <p class="lbl">Entry pass</p>
+    <h1>${esc(data.event)}</h1>
+    <p class="date">${esc(d)}</p>
+    <div id="qr"></div>
+    ${data.guest_name?`<p class="name">${esc(data.guest_name)}</p>`:''}
+    <p class="code">${esc(data.code)}</p>
+    ${data.status==='used'?'<p class="warn">This pass has already been used.</p>':''}
+    <button id="save">Save QR image</button>
+    <p class="hint">Show this QR code at the entrance.</p>`;
+  new QRCode(document.getElementById('qr'),{text:data.code,width:240,height:240,correctLevel:QRCode.CorrectLevel.M});
+  document.getElementById('save').onclick=()=>{
+    const cv=document.querySelector('#qr canvas');
+    const big=document.createElement('canvas');big.width=big.height=600;
+    const g=big.getContext('2d');g.imageSmoothingEnabled=false;g.fillStyle='#fff';g.fillRect(0,0,600,600);
+    g.drawImage(cv,30,30,540,540);
+    const a=document.createElement('a');a.href=big.toDataURL('image/png');a.download='entry-pass.png';a.click();
+  };
+}
+init();
+</script>
+</body>
+</html>

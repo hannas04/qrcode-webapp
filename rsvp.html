@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSVP</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--tx:#1b1e28;--mut:#6b7185;--pri:#5b4bdb;--bd:#e2e5ee;--ok:#1f9d55;--bad:#d64545}
+@media (prefers-color-scheme:dark){:root{--bg:#14161d;--card:#1d2029;--tx:#eceef5;--mut:#9aa1b8;--bd:#2c3040}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:22px;width:100%;max-width:420px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--mut);margin:0 0 18px;font-size:14px}
+label{display:block;font-size:13px;color:var(--mut);margin:0 0 4px}
+input[type=text],input[type=tel]{width:100%;padding:12px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit;margin-bottom:12px}
+.opts{display:flex;gap:8px;margin-bottom:16px}
+.opts label{flex:1;margin:0;padding:12px;border:1px solid var(--bd);border-radius:8px;text-align:center;cursor:pointer;color:var(--tx)}
+.opts input{display:none}
+.opts input:checked+span{font-weight:700;color:var(--pri)}
+.opts label:has(input:checked){border-color:var(--pri)}
+button,.btn{display:block;width:100%;padding:13px;border:0;border-radius:8px;background:var(--pri);color:#fff;font:inherit;cursor:pointer;text-align:center;text-decoration:none}
+button:disabled{opacity:.5}
+.err{color:var(--bad);font-size:14px;margin:10px 0 0;min-height:18px}
+.hide{display:none}
+.ok{text-align:center}
+.ok .tick{font-size:44px;color:var(--ok)}
+.btn.wa{background:#1f9d55;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="card">
+
+<div id="formBox">
+  <h1 id="evName">RSVP</h1>
+  <p class="sub" id="evDate"></p>
+  <label for="phone">Your phone number</label>
+  <input id="phone" type="tel" inputmode="tel" placeholder="e.g. 08012345678">
+  <label for="name">Your name</label>
+  <input id="name" type="text" placeholder="Full name">
+  <label>Will you be attending?</label>
+  <div class="opts">
+    <label><input type="radio" name="att" value="yes" checked><span>Yes, I'll be there</span></label>
+    <label><input type="radio" name="att" value="no"><span>Sorry, can't make it</span></label>
+  </div>
+  <button id="sendBtn">Submit RSVP</button>
+  <p class="err" id="err"></p>
+</div>
+
+<div id="doneBox" class="ok hide">
+  <div class="tick">✔</div>
+  <h1 id="doneTitle">Thank you!</h1>
+  <p class="sub" id="doneText"></p>
+  <a id="waBtn" class="btn wa hide" target="_blank" rel="noopener">Message us on WhatsApp for your pass</a>
+</div>
+
+</div>
+
+<script>
+// ====== SETTINGS ======
+const SUPABASE_URL = 'https://fwqsidukxvfitsdnfopg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3cXNpZHVreHZmaXRzZG5mb3BnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ2NDM5MzUsImV4cCI6MjExMDIxOTkzNX0.sjhynhUJMIJaEC9jxb44VjEziOO9clXtcy0rEVB-J54';
+const WHATSAPP_NUMBER = '08022468893'; // YOUR WhatsApp number, digits only, e.g. 2348012345678
+// ======================
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const eventId = new URLSearchParams(location.search).get('e');
+let eventName = '';
+
+async function init(){
+  if(!eventId){ $('formBox').innerHTML='<h1>Invalid link</h1><p class="sub">Please use the RSVP link you were sent.</p>'; return; }
+  const {data,error}=await sb.rpc('get_event_public',{p_event:eventId});
+  if(error||!data){ $('formBox').innerHTML='<h1>Event not found</h1><p class="sub">Please check your RSVP link.</p>'; return; }
+  eventName=data.name;
+  $('evName').textContent=data.name;
+  if(data.date) $('evDate').textContent=new Date(data.date).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+
+$('sendBtn').onclick=async()=>{
+  const phone=$('phone').value.trim(), name=$('name').value.trim();
+  const attending=document.querySelector('input[name=att]:checked').value==='yes';
+  $('err').textContent='';
+  if(phone.replace(/\D/g,'').length<10) return $('err').textContent='Please enter a valid phone number.';
+  if(!name) return $('err').textContent='Please enter your name.';
+  $('sendBtn').disabled=true;
+  const {data,error}=await sb.rpc('submit_rsvp',{p_event:eventId,p_phone:phone,p_name:name,p_attending:attending});
+  $('sendBtn').disabled=false;
+  if(error) return $('err').textContent='Something went wrong. Please try again.';
+  if(data.result==='not_listed') return $('err').textContent='Sorry, this number is not on the guest list.';
+  if(data.result!=='ok') return $('err').textContent='Please check your number and try again.';
+  $('formBox').classList.add('hide');$('doneBox').classList.remove('hide');
+  if(attending){
+    $('doneTitle').textContent='RSVP received!';
+    $('doneText').textContent='To get your entry pass, tap the button below and send us the message.';
+    const msg=`Hello, I have confirmed my RSVP for ${eventName}. Please send me my pass. My name is ${name}.`;
+    $('waBtn').href=`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`;
+    $('waBtn').classList.remove('hide');
+  }else{
+    $('doneText').textContent="We're sorry you can't make it. Your response has been recorded.";
+  }
+};
+init();
+</script>
+</body>
+</html>
