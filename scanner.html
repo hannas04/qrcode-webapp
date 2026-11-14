@@ -141,12 +141,27 @@ async function check(raw){
     else if(data.result==='wrong_event'){showRes('bad','Not for this event',code);addLog(code,'wrong event');}
     else{showRes('bad','Invalid code',code);addLog(code,'invalid');}
     stats();
-  }catch(e){showRes('bad','Error',e.message)}
+  }catch(e){
+    const detail=e?.message||String(e);
+    if(e?.code==='PGRST202'||/could not find the function public\.check_in|schema cache/i.test(detail)){
+      showRes('bad','Scanner setup error','Supabase schema cache does not contain public.check_in(p_code). Deploy the matching database function, verify its argument name, or refresh the schema cache if it was just created.');
+    }else{
+      showRes('bad','Error',detail);
+    }
+  }
   setTimeout(()=>busy=false,600);
 }
 $('manBtn').onclick=()=>{check($('manual').value);$('manual').value=''};
 
 async function start(){
+  if(!window.isSecureContext){
+    alert('Camera access requires HTTPS or localhost. Open the scanner from a secure URL.');
+    return;
+  }
+  if(typeof Html5Qrcode==='undefined'){
+    alert('The QR scanner library did not load. Check your internet connection and reload the page.');
+    return;
+  }
   scanner=new Html5Qrcode('reader');
   try{
     await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:240}},txt=>{
